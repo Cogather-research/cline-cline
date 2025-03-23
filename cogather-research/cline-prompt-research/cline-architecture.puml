@@ -1,0 +1,128 @@
+@startuml
+' Cline项目架构组件关系
+' 作者：Cogather研究小组
+' 日期：2024-03-23
+
+!define RECTANGLE class
+!define COMPONENT component
+!define INTERFACE interface
+!define ARROW -->
+!define DARROW -->
+
+skinparam {
+  BackgroundColor white
+  ArrowColor black
+  BorderColor black
+  FontSize 12
+}
+
+skinparam component {
+  BorderColor #3498db
+  BackgroundColor #ecf0f1
+  ArrowColor #34495e
+}
+
+package "扩展核心" {
+  COMPONENT [Cline主类] as Cline #d5e8f9
+  ' 源码位置: src/core/Cline.ts
+  ' 关键方法: presentAssistantMessage(), Cline构造函数
+
+  COMPONENT [Prompt系统] as Prompt #d5e8f9
+  ' 源码位置: src/core/prompts/system.ts
+  ' 关键函数: SYSTEM_PROMPT(), addUserInstructions()
+  
+  COMPONENT [工具管理] as Tools #d5e8f9
+  ' 工具定义在src/core/prompts/system.ts的SYSTEM_PROMPT函数中
+  ' 工具执行逻辑在src/core/Cline.ts的presentAssistantMessage方法中
+}
+
+package "集成服务" {
+  COMPONENT [终端管理器] as TerminalManager #f8e9d1
+  ' 源码位置: src/integrations/terminal/TerminalManager.ts
+  
+  COMPONENT [文件操作] as FileOps #f8e9d1
+  ' 主要在src/utils/fs.ts和src/services/glob/list-files.ts中实现
+  
+  COMPONENT [代码分析] as CodeAnalysis #f8e9d1
+  ' 源码位置: src/services/tree-sitter/index.ts
+  
+  COMPONENT [MCP集成] as McpHub #f8e9d1
+  ' 源码位置: src/services/mcp/McpHub.ts
+  
+  COMPONENT [浏览器集成] as BrowserSession #f8e9d1
+  ' 源码位置: src/services/browser/BrowserSession.ts
+}
+
+package "AI模型集成" {
+  COMPONENT [API处理器] as ApiHandler #e8f4d5
+  ' 源码位置: src/api/index.ts
+  ' 关键函数: buildApiHandler()
+  
+  COMPONENT [模型提供商] as Providers #e8f4d5
+  ' 源码位置: src/api/providers/
+}
+
+package "扩展界面" {
+  COMPONENT [Webview] as Webview #f9d5e8
+  ' 源码位置: src/core/webview/
+  
+  COMPONENT [VS Code集成] as VSCodeIntegration #f9d5e8
+  ' 源码位置: src/extension.ts
+}
+
+' 关系连接
+Cline ARROW Prompt : 使用
+' 关系说明: src/core/Cline.ts中的presentAssistantMessage()方法使用了system.ts中定义的prompt
+
+Cline ARROW Tools : 管理
+' 关系说明: Cline.ts中处理工具定义和调用，如shouldAutoApproveTool()方法
+
+Cline ARROW ApiHandler : 通过API调用AI
+' 关系说明: src/core/Cline.ts使用ApiHandler发送请求给AI模型
+
+Cline ARROW TerminalManager : 执行终端命令
+' 关系说明: 通过execute_command工具，调用TerminalManager执行命令
+
+Cline ARROW FileOps : 读写文件
+' 关系说明: 通过read_file/write_to_file等工具管理文件操作
+
+Cline ARROW CodeAnalysis : 分析代码结构
+' 关系说明: 通过list_code_definition_names工具分析代码
+
+Cline ARROW McpHub : 使用MCP资源和工具
+' 关系说明: 通过use_mcp_tool和access_mcp_resource工具
+
+Cline ARROW BrowserSession : 控制浏览器
+' 关系说明: 通过browser_action工具控制浏览器行为
+
+ApiHandler ARROW Providers : 集成多种模型
+' 关系说明: ApiHandler使用Providers中的实现类与不同AI服务商交互
+
+VSCodeIntegration ARROW Cline : 创建和管理
+' 关系说明: extension.ts中的activate()函数创建Cline实例
+
+VSCodeIntegration ARROW Webview : 提供UI
+' 关系说明: 扩展通过webview提供用户界面
+
+note right of Prompt
+  系统Prompt是Cline的核心，定义了AI助手的角色、
+  功能和工具集。包括工具描述、使用格式和参数。
+  (src/core/prompts/system.ts)
+end note
+
+note right of Tools
+  工具集包括：
+  - 文件操作 (read_file, write_to_file等)
+  - 终端命令 (execute_command)
+  - 代码分析 (list_code_definition_names等)
+  - 浏览器控制 (browser_action)
+  - MCP工具 (use_mcp_tool, access_mcp_resource)
+end note
+
+note bottom of Cline
+  Cline类是整个扩展的核心，管理AI聊天流程。
+  presentAssistantMessage()方法处理AI消息和工具调用。
+  (src/core/Cline.ts，3600+行代码)
+end note
+
+@enduml

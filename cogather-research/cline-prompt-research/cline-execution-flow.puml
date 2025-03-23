@@ -1,0 +1,144 @@
+@startuml Cline执行流程
+
+!theme plain
+skinparam BackgroundColor white
+skinparam ParticipantPadding 20
+skinparam BoxPadding 20
+skinparam SequenceMessageAlign center
+
+actor User
+participant "VSCode扩展" as Extension
+participant "ClineProvider" as Provider
+participant "Cline" as Core
+participant "ApiHandler" as API
+participant "prompts/system.ts" as SystemPrompt
+participant "提供商适配器\n(如AnthropicHandler)" as ProviderAdapter
+entity "LLM服务\n(如Claude)" as LLM
+
+box "前端" #White
+  participant Extension
+end box
+
+box "核心处理" #White
+  participant Provider
+  participant Core
+  participant API
+  participant SystemPrompt
+end box
+
+box "API交互" #White
+  participant ProviderAdapter
+  entity LLM
+end box
+
+== 初始化流程 ==
+User -> Extension: 发起请求
+Extension -> Provider: 调用ClineProvider
+Provider -> Core: 创建Cline实例\n**new Cline(provider, apiConfig, ...)**
+
+== Prompt构造流程 ==
+note right of Core #LightBlue
+  <b>Prompt构造相关操作</b>将以<b>蓝色</b>标注
+  <b>模型输出处理相关操作</b>将以<b>绿色</b>标注
+end note
+
+Core -[#blue]> API: <color:blue>构建API处理器</color>\n**buildApiHandler(apiConfiguration)**
+API -[#blue]> ProviderAdapter: <color:blue>创建特定提供商适配器</color>\n(如AnthropicHandler)
+
+User -> Extension: 输入问题
+Extension -> Provider: 将问题传递给Provider
+Provider -[#blue]> Core: <color:blue>调用ask(type, text)方法</color>
+
+Core -[#blue]> Core: <color:blue>准备上下文和消息历史</color>
+note right of Core #LightBlue
+  <color:blue>准备上下文包括：</color>
+  - 工作区信息收集
+  - 当前打开文件内容
+  - 编辑历史、光标位置
+  - 项目结构信息
+end note
+
+Core -[#blue]> SystemPrompt: <color:blue>获取系统提示</color>\n**SYSTEM_PROMPT(cwd, supportsComputerUse, mcpHub, browserSettings)**
+note right of SystemPrompt #LightBlue
+  <color:blue>在src/core/prompts/system.ts中</color>
+  <color:blue>系统提示包含：</color>
+  - 角色定义与基本能力
+  - 工具使用说明和参数
+  - 用户系统信息
+  - 环境配置
+end note
+
+SystemPrompt -[#blue]-> Core: <color:blue>返回系统提示模板</color>
+
+Core -[#blue]> SystemPrompt: <color:blue>添加用户自定义指令</color>\n**addUserInstructions(...)**
+note right of SystemPrompt #LightBlue
+  <color:blue>自定义指令来源：</color>
+  - 用户设置的自定义指令
+  - .clinerules文件内容
+  - .clineignore文件规则
+  - 首选语言设置
+end note
+
+SystemPrompt -[#blue]-> Core: <color:blue>返回完整系统提示</color>
+
+Core -[#blue]> Core: <color:blue>构建完整消息历史</color>\n(apiConversationHistory)
+note right of Core #LightBlue
+  <color:blue>消息历史包含：</color>
+  - 完整系统提示
+  - 之前的对话内容
+  - 用户最新问题
+  - 之前工具调用结果
+end note
+
+Core -[#blue]> ProviderAdapter: <color:blue>调用createMessage方法</color>\n**createMessage(systemPrompt, messages)**
+note right of ProviderAdapter #LightBlue
+  <color:blue>Provider特定请求构建：</color>
+  - 添加特定参数(如温度、token限制)
+  - 缓存控制配置
+  - 流式处理设置
+end note
+
+ProviderAdapter -[#blue]> LLM: <color:blue>发送最终构造的API请求</color>
+
+== 模型输出处理流程 ==
+
+LLM -[#green]> ProviderAdapter: <color:green>流式返回响应</color>
+ProviderAdapter -[#green]> Core: <color:green>解析并传递响应流</color>
+
+Core -[#green]> Core: <color:green>解析助手消息内容</color>\n**parseAssistantMessage()**
+note right of Core #LightGreen
+  <color:green>src/core/assistant-message/index.ts</color>
+  <color:green>解析内容包括：</color>
+  - 普通文本内容
+  - 工具调用请求
+  - 内联代码块
+end note
+
+alt LLM请求执行工具
+  Core -[#green]> Core: <color:green>处理工具调用请求</color>
+  
+  alt 需要用户批准
+    Core -[#green]> User: <color:green>请求确认工具调用</color>
+    User -[#green]> Core: <color:green>确认或拒绝</color>
+  else 自动批准
+    Core -[#green]> Core: <color:green>根据autoApprovalSettings自动批准</color>
+  end
+  
+  Core -> Core: 执行工具(如文件读写、命令执行等)
+  Core -[#green]> ProviderAdapter: <color:green>将工具执行结果格式化后返回给LLM</color>
+  ProviderAdapter -[#green]> LLM: <color:green>发送工具执行结果</color>
+  LLM -[#green]> ProviderAdapter: <color:green>继续生成响应</color>
+else LLM直接返回文本
+  Core -[#green]> Provider: <color:green>格式化和传递文本响应</color>
+  note right of Core #LightGreen
+    <color:green>在formatResponse函数中处理：</color>
+    - 修复HTML转义
+    - 处理特殊符号
+    - 格式化代码块
+  end note
+end
+
+Provider -[#green]> Extension: <color:green>更新UI显示处理后的响应</color>
+Extension -> User: 展示最终结果
+
+@enduml 
